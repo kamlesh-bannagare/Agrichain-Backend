@@ -8,7 +8,27 @@ from .utils import checkout_calculation
 
 
 class UserCartAPIView(APIView):
-    def get(self, request, user_id=None, format=None):
+    """
+        API endpoint for managing user shopping carts for the checkout.
+
+        Provides operations to:
+        - Retrieve cart items with calculated totals (including special offers)
+        - Add/update items in cart (auto-increments quantity if item exists)
+        - Remove single items or clear entire cart
+
+        The cart automatically handles:
+        - Quantity increments when adding duplicate items
+        - Special offer calculations via checkout_calculation utility
+        - Bulk clearing of cart items after checkout
+
+        Example Endpoints:
+        GET    /api/cart/{user_id}/    - Get user's cart with calculated totals
+        POST   /api/cart/              - Add item to cart (auto-increments if exists)
+        DELETE /api/cart/{item_id}/    - Remove specific item
+        DELETE /api/cart/              - Clear all items (requires user_id in body)
+        """
+    def get(self, request, id=None, format=None):
+        user_id=id
         if user_id:
             cart_items = UserCart.objects.filter(user_id=user_id)
             serializer = UserCartSerializer(cart_items, many=True)
@@ -40,33 +60,20 @@ class UserCartAPIView(APIView):
         serializer = UserCartSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
-    def put(self, request, format=None):
-        user_id = request.data.get('user_id')
-        item_id = request.data.get('item_id')
-
-        try:
-            cart_item = UserCart.objects.get(user_id=user_id, item_id=item_id)
-        except UserCart.DoesNotExist:
-            return Response({"error": "Item not found in cart"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Update only the fields that are provided
-        if 'quantity' in request.data:
-            cart_item.quantity = request.data['quantity']
-        if 'unit_price' in request.data:
-            cart_item.unit_price = request.data['unit_price']
-        # Add other fields as needed
-
-        cart_item.save()
-        serializer = UserCartSerializer(cart_item)
-        return Response(serializer.data)
-
-    def delete(self, request, format=None):
-        user_id = request.data.get('user_id')
-        item_id = request.data.get('item_id')
-
-        try:
-            cart_item = UserCart.objects.get(user_id=user_id, item_id=item_id)
+    def delete(self, request, id= None, format=None):
+        print("deleting the item", request.data)
+        # Handle both single item deletion and clear all items after checkout
+        if id is None:
+            if 'user_id' in request.data:
+                # This is the clear all items request
+                user_id = request.data.get('user_id')
+                deleted_count, _ = UserCart.objects.filter(user_id=user_id).delete()
+                return Response(
+                    {"message": f"Successfully deleted {deleted_count} items from cart"},
+                    status=status.HTTP_204_NO_CONTENT
+                )
+        else:
+            # This is the original single item deletion
+            cart_item = get_object_or_404(UserCart, pk=id)
             cart_item.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        except UserCart.DoesNotExist:
-            return Response({"error": "Item not found in cart"}, status=status.HTTP_404_NOT_FOUND)
